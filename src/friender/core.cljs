@@ -19,18 +19,26 @@
 
 
 (defview statuses [u]
-  [:friender/status u status ts]
+  [:friender/status u status private ts]
   :store-in (r/atom nil))
 
 (defn create-status [host]
-  (let [status (r/atom "")]
+  (let [status (r/atom "")
+        private (r/atom false)]
     (fn [host]
       (let [{:keys [add]} (meta (statuses host (user host)))]
         [:div
-         [:input {:value @status
-                  :on-change #(reset! status (.-target.value %))}]
-         [:button {:on-click #(add {:status @status
-                                    :ts ((:time host))})} "Post"]]))))
+         [:input.status {:value @status
+                         :on-change #(reset! status (.-target.value %))}]
+         [:input.private {:type "checkbox"
+                          :checked @private
+                          :on-change #(reset! private (.-target.checked %))}]
+         [:button {:on-click #(do
+                                (add {:status @status
+                                      :private @private
+                                      :ts ((:time host))})
+                                (reset! status "")
+                                (reset! private false))} "Post"]]))))
 
 (defn disp-timeline-entry [])
 
@@ -41,25 +49,30 @@
 
 (defn timeline-pane [host]
   (let [entries (timeline host (user host))]
-    (for [{:keys [ts entry]} entries]
-      [:div.timeline-entry {:key ts}
-       [disp-timeline-entry entry]])))
+    [:div
+     (for [{:keys [ts entry]} entries]
+       [:div.timeline-entry {:key ts}
+        [disp-timeline-entry entry]])]))
 
 (defview user-profile [u]
   [:friender/profile u name tagline]
   :store-in (r/atom nil))
 
-(defn user-page [host]
+(defn home-page [host]
   (let [profiles (user-profile host (user host))]
     [:div
      (cond (empty? profiles)
            [:button.create-profile {:on-click #((-> profiles meta :add) {})} "Create Profile"]
            :else
            [:div.profile [edit-profile (first profiles)]])
-     [:div.create-status [create-status host]]]))
+     [:div.create-status [create-status host]]
+     [:div.timeline [timeline-pane host]]]))
+(dr/set-page-uri home-page "home")
+(dr/set-page-uri home-page :default)
 
 (def page (r/atom nil))
-(dr/watch-uri page)
+(let [host (ax/default-connection r/atom)]
+  (dr/watch-uri page host))
 
 (let [elem (js/document.getElementById "app")]
   (when elem

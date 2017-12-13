@@ -21,29 +21,39 @@
         (is (= (:tagline @record) "bar is better"))))))
 
 (deftest create-status-1
-  ;; The create-status component contains an :input box and a
-  ;; :button. Clicking the button posts a new status. create-status
-  ;; returns a UI function, so it can hold the contents of the :input
-  ;; box as a closure variable.
+  ;; The create-status component contains an input box, a checkbox and
+  ;; a button. Clicking the button posts a new status. create-status
+  ;; returns a UI function, so it can hold the contents of the input
+  ;; box and the checkbox as closure atoms. The button creates a new
+  ;; status with the values from the inputs.
   (let [host (-> (ax/mock-connection "foo")
                  (assoc :time (constantly 12345)))
         create-status (app/create-status host)
         uifn #(create-status host)]
-    (is (= (rq/find (uifn) :input:value) [""]))
+    (is (= (rq/find (uifn) :input.status:value) [""]))
+    (is (= (rq/find (uifn) :input.private:type) ["checkbox"]))
+    (is (= (rq/find (uifn) :input.private:checked) [false]))
     ;; Editing works
-    (let [[change] (rq/find (uifn) :input:on-change)]
+    (let [[change] (rq/find (uifn) :input.status:on-change)]
       (change (rq/mock-change-event "abc")))
-    (is (= (rq/find (uifn) :input:value) ["abc"]))
+    (is (= (rq/find (uifn) :input.status:value) ["abc"]))
+    (let [[change] (rq/find (uifn) :input.private:on-change)]
+      (change (rq/mock-change-event true "checked")))
+    (is (= (rq/find (uifn) :input.private:checked) [true]))
     ;; There's also a "Post" :button
     (is (= (rq/find (uifn) :button) ["Post"]))
     ;; Clicking the :button creates a new status fact
     (let [[click] (rq/find (uifn) :button:on-click)]
       (click))
     ;; This should post the status in the statuses view
-    (let [[{:keys [u status ts]}] (app/statuses host "foo")]
+    (let [[{:keys [u status private ts]}] (app/statuses host "foo")]
       (is (= u "foo"))
       (is (= status "abc"))
-      (is (= ts 12345)))))
+      (is (= private true))
+      (is (= ts 12345)))
+    ;; After posting, the state should be inputs should be cleared.
+    (is (= (rq/find (uifn) :input.status:value) [""]))
+    (is (= (rq/find (uifn) :input.private:checked) [false]))))
 
 (deftest timeline-pane-1
   ;; The timeline-pane component displays a user's timeline. A
@@ -67,22 +77,24 @@
       ;; Each entry contains a call to disp-timeline-entry with the content of the entry
       (is (= (rq/find ui {:elem app/disp-timeline-entry}) [[:bar 2 3 4] [:foo 1 2 3]])))))
 
-(deftest user-page-1
-  ;; A user-page allows a user to:
+(deftest home-page-1
+  ;; A home-page allows a user to:
   ;; (1) edit his or her profile,
   ;; (2) write statuses, and
   ;; (3) view timeline, which combines both statuses and notifications
   (let [host (ax/mock-connection "foo")
-        ui (app/user-page host)]
+        ui (app/home-page host)]
     ;; Initially, there should be a :button for creating a profile
     (is (= (rq/find ui :button.create-profile) ["Create Profile"]))
     ;; Pressing the button removes it from the UI, and shows an edit-profile control
     (let [[click] (rq/find ui :button.create-profile:on-click)]
       (click)
-      (let [ui (app/user-page host)]
+      (let [ui (app/home-page host)]
         ;; The button is gone
         (is (= (rq/find ui :button.create-profile) []))
         ;; There is an edit-profile component in its place
         (is (= (first (first (rq/find ui :div.profile))) app/edit-profile))))
     ;; Should contain a create-status component
-    (is (= (rq/find ui :.create-status) [[app/create-status host]]))))
+    (is (= (rq/find ui :.create-status) [[app/create-status host]]))
+    ;; Should also contain the user's timeline
+    (is (= (rq/find ui :.timeline) [[app/timeline-pane host]]))))
